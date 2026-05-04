@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EmoTrace</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0a0a0f; color: #e8e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+  h1 { font-size: 28px; margin-bottom: 6px; }
+  h1 span { color: #7c6aff; }
+  .subtitle { color: #6b6b80; font-size: 13px; margin-bottom: 32px; }
+  .container { width: 100%; max-width: 700px; display: flex; flex-direction: column; gap: 16px; }
+  .chat-box { background: #13131a; border: 1px solid #2a2a38; border-radius: 12px; padding: 20px; min-height: 300px; max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  .msg { padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; max-width: 80%; }
+  .msg.user { background: #7c6aff; color: #fff; align-self: flex-end; }
+  .msg.system { background: #1c1c26; border: 1px solid #2a2a38; align-self: flex-start; }
+  .result-box { background: #13131a; border: 1px solid #2a2a38; border-radius: 12px; padding: 16px; font-size: 13px; display: none; }
+  .result-box.visible { display: block; }
+  .result-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1c1c26; }
+  .result-row:last-child { border-bottom: none; }
+  .result-label { color: #6b6b80; }
+  .result-value { color: #e8e8f0; font-weight: 500; }
+  .drift-yes { color: #ec7063; }
+  .drift-no { color: #52be80; }
+  .input-row { display: flex; gap: 10px; }
+  textarea { flex: 1; background: #1c1c26; border: 1px solid #2a2a38; border-radius: 10px; padding: 12px 16px; color: #e8e8f0; font-family: monospace; font-size: 13px; resize: none; outline: none; height: 48px; }
+  textarea:focus { border-color: #7c6aff; }
+  button { background: #7c6aff; border: none; border-radius: 10px; padding: 0 20px; color: #fff; font-family: monospace; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+  button:hover { background: #6b58ff; }
+  button.reset { background: #1c1c26; border: 1px solid #2a2a38; color: #6b6b80; }
+  button.reset:hover { background: #2a2a38; }
+  .summary-box { background: #13131a; border: 1px solid #2a2a38; border-radius: 12px; padding: 16px; font-size: 12px; color: #6b6b80; display: none; }
+  .summary-box.visible { display: block; }
+  .summary-title { color: #e8e8f0; font-size: 13px; font-weight: 500; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<h1>Emo<span>Trace</span></h1>
+<p class="subtitle">Emotion-Aware Dialogue Agent — tracks emotional state across conversation turns</p>
+
+<div class="container">
+
+  <div class="chat-box" id="chatBox">
+    <div class="msg system">Hello! Start typing to begin emotion tracking. I'll analyse your emotional state across the conversation.</div>
+  </div>
+
+  <div class="result-box" id="resultBox">
+    <div class="result-row"><span class="result-label">Dominant Emotion</span><span class="result-value" id="rDominant">—</span></div>
+    <div class="result-row"><span class="result-label">Confidence</span><span class="result-value" id="rConfidence">—</span></div>
+    <div class="result-row"><span class="result-label">Cognitive Load</span><span class="result-value" id="rCogLoad">—</span></div>
+    <div class="result-row"><span class="result-label">Emotion Drift</span><span class="result-value" id="rDrift">—</span></div>
+  </div>
+
+  <div class="summary-box" id="summaryBox">
+    <div class="summary-title">Session Summary</div>
+    <div class="result-row"><span class="result-label">Dominant Emotion</span><span class="result-value" id="sDominant">—</span></div>
+    <div class="result-row"><span class="result-label">Total Turns</span><span class="result-value" id="sTurns">—</span></div>
+    <div class="result-row"><span class="result-label">Emotion Shifts</span><span class="result-value" id="sShifts">—</span></div>
+    <div class="result-row"><span class="result-label">Avg Confidence</span><span class="result-value" id="sConf">—</span></div>
+  </div>
+
+  <div class="input-row">
+    <textarea id="inputBox" placeholder="Type your message..." onkeydown="handleKey(event)"></textarea>
+    <button onclick="sendMessage()">Send</button>
+    <button class="reset" onclick="resetSession()">Reset</button>
+  </div>
+
+</div>
+
+<script>
+async function sendMessage() {
+  const input = document.getElementById('inputBox');
+  const text = input.value.trim();
+  if (!text) return;
+
+  addMessage(text, 'user');
+  input.value = '';
+
+  const res = await fetch('/analyse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text })
+  });
+
+  const data = await res.json();
+
+  // Update result box
+  document.getElementById('resultBox').classList.add('visible');
+  document.getElementById('rDominant').textContent = data.dominant_emotion;
+  document.getElementById('rConfidence').textContent = data.confidence + '%';
+  document.getElementById('rCogLoad').textContent = data.cognitive_load + '%';
+  const driftEl = document.getElementById('rDrift');
+  driftEl.textContent = data.drift_detected ? 'Yes — emotion shifted' : 'No — stable';
+  driftEl.className = 'result-value ' + (data.drift_detected ? 'drift-yes' : 'drift-no');
+
+  // Update summary
+  const s = data.session_summary;
+  document.getElementById('summaryBox').classList.add('visible');
+  document.getElementById('sDominant').textContent = s.dominant_emotion;
+  document.getElementById('sTurns').textContent = s.total_turns;
+  document.getElementById('sShifts').textContent = s.emotion_shifts;
+  document.getElementById('sConf').textContent = s.average_confidence + '%';
+
+  // System response
+  addMessage(`Detected: ${data.dominant_emotion} (${data.confidence}%) | Cognitive load: ${data.cognitive_load}% | Drift: ${data.drift_detected ? 'Yes' : 'No'}`, 'system');
+}
+
+function addMessage(text, type) {
+  const box = document.getElementById('chatBox');
+  const div = document.createElement('div');
+  div.className = 'msg ' + type;
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function resetSession() {
+  await fetch('/reset', { method: 'POST' });
+  document.getElementById('chatBox').innerHTML = '<div class="msg system">Session reset. Start a new conversation.</div>';
+  document.getElementById('resultBox').classList.remove('visible');
+  document.getElementById('summaryBox').classList.remove('visible');
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+</script>
+</body>
+</html>
